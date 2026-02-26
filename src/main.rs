@@ -1,71 +1,180 @@
-use chrono::{DateTime, Datelike, Timelike, Utc};
-use std::f64::consts::PI;
-
-const LAT: f64 = 53.150058;
-const LON: f64 = 38.121094;
-const ELEVATION: i16 = 174;
-
-struct Dateonly {
-    year: u16,
-    month: u8,
-    day: u8,
-}
+use approx::relative_eq;
+use chrono::{DateTime, Datelike, Duration, FixedOffset, NaiveDate, Utc};
+use solar_positioning::SunriseResult;
+use solar_positioning::spa;
+use solar_positioning::time::DeltaT;
+use std::time::Instant;
 
 fn main() {
-    let today = chrono::Utc::now();
-    let date = parse_date(today);
-    let jd = julian_date(date.year, date.month, date.day, today.hour());
-    let decl = sun_declination(jd);
+    // Ефремов 53.149159, 38.121840
+    let start = Instant::now();
+    let lat = 53.149159;
+    let lon = 38.121840;
+    let today = Utc::now();
+    //let today: DateTime<Utc> = "2026-01-10T00:00:00+00:00"
+      //  .parse()
+        //.expect("Неверный формат даты");
+    let timezone = FixedOffset::east_opt(3 * 3600);
+    let delta_t = DeltaT::estimate_from_date_like(today).unwrap_or(69.0);
 
-    println!("Today {}-{}-{}", date.year, date.month, date.day);
-    println!("Julian date: {}", jd);
-    println!("Sun declination: {}", decl);
+    // Вычисление sunrise / sunset (горизонт 0° + рефракция)
+    let result = spa::sunrise_sunset_for_horizon(
+        today,
+        lat,
+        lon,
+        delta_t,
+        solar_positioning::Horizon::SunriseSunset, // стандартный горизонт с рефракцией
+    )
+    .expect("Error 1");
+
+    println!("Today {}", today.format("%Y-%m-%d"));
+    let to_ny = days_to_new_year(today);
+    let days_in_year = if is_leap_year(today.year()) { 366 } else { 365 };
+    if to_ny == 0 {
+        println!("Today is New Year! Happy holidays!")
+    } else {
+        println!(
+            "Days to New Year: {}. Year completed at {:.02}%",
+            to_ny,
+            100.0 - (to_ny as f32 / days_in_year as f32 * 100.0)
+        )
+    }
+    let mut daylength = 0.0;
+
+    match result {
+        SunriseResult::RegularDay {
+            sunrise,
+            transit,
+            sunset,
+        } => {
+            println!(
+                "{:<12}{}\r\n{:<12}{}\r\n{:<12}{}",
+                "Sunrise:",
+                sunrise
+                    .with_timezone(&timezone.unwrap())
+                    .format("%H:%M:%S")
+                    .to_string(),
+                "Solar noon:",
+                transit
+                    .with_timezone(&timezone.unwrap())
+                    .format("%H:%M:%S")
+                    .to_string(),
+                "Sunset:",
+                sunset
+                    .with_timezone(&timezone.unwrap())
+                    .format("%H:%M:%S")
+                    .to_string()
+            );
+            daylength = time_diff(sunrise, sunset);
+            println!("{:<12}{}", "Daylength:", seconds_to_hms(daylength));
+            println!(
+                "{:<12}{}",
+                "To sunset:",
+                seconds_to_hms(time_diff(today, sunset))
+            );
+        }
+        _ => println!("No sunrise or sunset today"),
+    }
+
+    let yesterday = today - Duration::days(1);
+    let tomorrow = today + Duration::days(1);
+
+    let res_yesterday = spa::sunrise_sunset_for_horizon(
+        yesterday,
+        lat,
+        lon,
+        delta_t,
+        solar_positioning::Horizon::SunriseSunset,
+    )
+    .expect("Error 3");
+
+    let res_tomorrow = spa::sunrise_sunset_for_horizon(
+        tomorrow,
+        lat,
+        lon,
+        delta_t,
+        solar_positioning::Horizon::SunriseSunset,
+    )
+    .expect("Error 4");
+
+    let daylength_yesterday =
+        (*res_yesterday.sunset().unwrap() - res_yesterday.sunrise().unwrap()).as_seconds_f32();
+    let daylength_tomorrow =
+        (*res_tomorrow.sunset().unwrap() - res_tomorrow.sunrise().unwrap()).as_seconds_f32();
+    let day_diff = daylength_tomorrow - daylength;
+
+    println!(
+        "{:<22} {}", "Day length yesterday:",
+        seconds_to_hms(daylength_yesterday)
+    );
+    println!(
+        "{:<22} {}", "Day length tomorrow:",
+        seconds_to_hms(daylength_tomorrow)
+    );
+
+    if day_diff < 0.0 {
+        println!("{:<22} {}", "Today is shorter by:", seconds_to_hms(day_diff.abs()));
+    } else {
+        println!("{:<22} {}", "Today is longer by:", seconds_to_hms(day_diff));
+    }
+
+    find_next_date(lat, lon, today, delta_t, &mut daylength);
+    let finish = start.elapsed();
+    println!("Calculations took: {:?} seconds", finish.as_secs_f64())
 }
 
-fn julian_date(year: u16, month: u8, day: u8, ut_hours: u32) -> f64 {
-    let y = year as f64;
-    let m = month as f64;
-    let d = day as f64;
-    let ut_hours = ut_hours as f64;
-
-    let a = ((14.0 - m) / 12.0).floor() as i32;
-    let yy = (y as i32 + 4800 - a) as f64;
-    let mm = (m as i32 + 12 * a - 3) as f64;
-
-    let jdn = d.floor()
-        + (153.0 * mm + 2.0).floor() / 5.0
-        + 365.0 * yy
-        + (yy / 4.0).floor()
-        - (yy / 100.0).floor()
-        + (yy / 400.0).floor()
-        - 32045.0;
-
-    jdn + (ut_hours - 12.0) / 24.0
+fn find_next_date(lat: f64, lon: f64, today: DateTime<Utc>, delta_t: f64, daylength: &mut f32) {
+    for d in 1..365 {
+        let next_date = today + Duration::days(d);
+        let future = spa::sunrise_sunset_for_horizon(
+            next_date,
+            lat,
+            lon,
+            delta_t,
+            solar_positioning::Horizon::SunriseSunset,
+        )
+            .expect("Error 2");
+        match future {
+            SunriseResult::RegularDay {
+                sunrise,
+                transit: _,
+                sunset,
+            } => {
+                let next_length = time_diff(sunrise, sunset);
+                if relative_eq!(next_length, daylength, epsilon = 100.0) {
+                    println!(
+                        "Next date with almost same length is {}. Day length will be {}",
+                        next_date.format("%Y-%m-%d"),
+                        seconds_to_hms(next_length)
+                    );
+                }
+            }
+            _ => println!("No sunrise or sunset today"),
+        }
+    }
 }
 
-fn sun_declination(jd: f64) -> f64 {
-    let n = jd - 2451545.0;
-
-    // Средняя аномалия Солнца (M) — лучше, чем просто L
-    let m_deg = 357.5291 + 0.98560028 * n;
-    let m = m_deg.to_radians();
-
-    // Уравнение центра (более точное приближение)
-    let c = 1.9148 * m.sin()
-        + 0.0200 * (2.0 * m).sin()
-        + 0.0003 * (3.0 * m).sin();
-
-    // Средняя долгота Солнца
-    let lambda_deg = 280.4665 + 0.98564736 * n + c;
-
-    let epsilon = 23.4393 - 0.0000004 * n;  // наклон эклиптики, слегка корректируем
-
-    let sin_delta = lambda_deg.to_radians().sin() * epsilon.to_radians().sin();
-    let delta_rad = sin_delta.asin();
-
-    delta_rad.to_degrees()  // возвращаем градусы — удобнее
+fn days_to_new_year(dt: DateTime<Utc>) -> u16 {
+    let current_year = dt.year();
+    let next_year = current_year + 1;
+    let new_year = NaiveDate::from_ymd_opt(next_year, 1, 1).expect("Invalid date");
+    let days_remaining = (new_year - dt.date_naive()).num_days() as u16;
+    days_remaining
+}
+fn time_diff(sunrise: DateTime<Utc>, sunset: DateTime<Utc>) -> f32 {
+    (sunset - sunrise).as_seconds_f32()
 }
 
-fn parse_date(date: DateTime<Utc>) -> Dateonly {
-    Dateonly {year: date.year() as u16, month: date.month() as u8, day: date.day() as u8}
+fn seconds_to_hms(total_seconds: f32) -> String {
+    //written by claude
+    let total_seconds = total_seconds as u32;
+    let hours = total_seconds / 3600;
+    let minutes = (total_seconds % 3600) / 60;
+    let seconds = total_seconds % 60;
+
+    format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+}
+
+fn is_leap_year(year: i32) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }

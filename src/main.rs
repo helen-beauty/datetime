@@ -12,8 +12,8 @@ fn main() {
     let lon = 38.121840;
     let today = Utc::now();
     //let today: DateTime<Utc> = "2026-01-10T00:00:00+00:00"
-      //  .parse()
-        //.expect("Неверный формат даты");
+    //  .parse()
+    //.expect("Неверный формат даты");
     let timezone = FixedOffset::east_opt(3 * 3600);
     let delta_t = DeltaT::estimate_from_date_like(today).unwrap_or(69.0);
 
@@ -67,11 +67,12 @@ fn main() {
             );
             daylength = time_diff(sunrise, sunset);
             println!("{:<12}{}", "Daylength:", seconds_to_hms(daylength));
-            println!(
-                "{:<12}{}",
-                "To sunset:",
-                seconds_to_hms(time_diff(today, sunset))
-            );
+            let to_sunset = time_diff(today, sunset);
+            if to_sunset <= 0.0 {
+                println!("Sun is below the horizon now")
+            } else {
+                println!("{:<12}{}", "To sunset:", seconds_to_hms(to_sunset));
+            }
         }
         _ => println!("No sunrise or sunset today"),
     }
@@ -104,16 +105,22 @@ fn main() {
     let day_diff = daylength_tomorrow - daylength;
 
     println!(
-        "{:<22} {}", "Day length yesterday:",
+        "{:<22} {}",
+        "Day length yesterday:",
         seconds_to_hms(daylength_yesterday)
     );
     println!(
-        "{:<22} {}", "Day length tomorrow:",
+        "{:<22} {}",
+        "Day length tomorrow:",
         seconds_to_hms(daylength_tomorrow)
     );
 
     if day_diff < 0.0 {
-        println!("{:<22} {}", "Today is shorter by:", seconds_to_hms(day_diff.abs()));
+        println!(
+            "{:<22} {}",
+            "Today is shorter by:",
+            seconds_to_hms(day_diff.abs())
+        );
     } else {
         println!("{:<22} {}", "Today is longer by:", seconds_to_hms(day_diff));
     }
@@ -133,7 +140,7 @@ fn find_next_date(lat: f64, lon: f64, today: DateTime<Utc>, delta_t: f64, daylen
             delta_t,
             solar_positioning::Horizon::SunriseSunset,
         )
-            .expect("Error 2");
+        .expect("Error 2");
         match future {
             SunriseResult::RegularDay {
                 sunrise,

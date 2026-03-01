@@ -4,4 +4,4 @@ One sole reason to create this tool, and not use common websites with same infor
 
 The tool written in rust as #I'm practicing in this language. And this is my first project where I used AI only for couple functions which I didn't wish to invent. I may find them below in source, they had appropriate comment.
 
-Tool already compiled and zipped so you can download it [HERE][https://github.com/helen-beauty/datetime/raw/refs/heads/master/datetime.zip]
+Tool already compiled and zipped so you can download it [HERE](https://github.com/helen-beauty/datetime/raw/refs/heads/master/datetime.zip)

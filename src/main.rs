@@ -13,9 +13,9 @@ fn main() {
     let start = Instant::now();
 
     let today = Utc::now();
-    //let today: DateTime<Utc> = "2026-01-10T00:00:00+00:00"
-    //  .parse()
-    //.expect("Неверный формат даты");
+    // let today: DateTime<Utc> = "2026-06-22T00:00:00+00:00"
+    //     .parse()
+    //     .expect("Неверный формат даты");
     let timezone = FixedOffset::east_opt(TIME_OFFSET_SECONDS);
     let delta_t = DeltaT::estimate_from_date_like(today).unwrap_or(69.0);
 
@@ -130,40 +130,54 @@ fn main() {
 }
 
 fn find_next_date(lat: f64, lon: f64, today: DateTime<Utc>, delta_t: f64, daylength: &mut f32) {
-    let dl_list: Vec<(f32, DateTime<Utc>)> = Vec::new();
-    for d in 1..365 {
-        let next_date = today + Duration::days(d);
-        let future = spa::sunrise_sunset_for_horizon(
-            next_date,
-            lat,
-            lon,
-            delta_t,
-            solar_positioning::Horizon::SunriseSunset,
-        )
-        .expect("Error 2");
-        match future {
-            SunriseResult::RegularDay {
-                sunrise,
-                transit: _,
-                sunset,
-            } => {
-                let next_length = time_diff(sunrise, sunset);
-                let mut rel_count: u8 = 0;
-                if relative_eq!(next_length, daylength, epsilon = 100.0) {
-                    println!(
-                        "Next date with almost same length is {}. Day length will be {}",
-                        next_date.format("%Y-%m-%d"),
-                        seconds_to_hms(next_length)
-                    );
-                    rel_count += 1;
+    let mut dl_list: Vec<(f32, DateTime<Utc>)> = Vec::new();
+    let mut rel_count: u8 = 0;
+    let mut epsilon : f32 = 100.0;
+    loop {
+        for d in 1..365 {
+            let next_date = today + Duration::days(d);
+            let future = spa::sunrise_sunset_for_horizon(
+                next_date,
+                lat,
+                lon,
+                delta_t,
+                solar_positioning::Horizon::SunriseSunset,
+            )
+                .expect("Error 2");
+            match future {
+                SunriseResult::RegularDay {
+                    sunrise,
+                    transit: _,
+                    sunset,
+                } => {
+                    let next_length = time_diff(sunrise, sunset);
+                    if relative_eq!(next_length, daylength, epsilon = epsilon) {
+                        // println!(
+                        //     "Next date with almost same length is {}. Day length will be {}",
+                        //     next_date.format("%Y-%m-%d"),
+                        //     seconds_to_hms(next_length)
+                        // );
+                        rel_count += 1;
+                        dl_list.push((next_length, next_date));
+                    }
                 }
-                if rel_count > 1 {
-
-                }
+                _ => println!("No sunrise or sunset today"),
             }
-            _ => println!("No sunrise or sunset today"),
         }
+        if rel_count > 1 {
+            epsilon = epsilon - 1.0;
+            rel_count = 0;
+            dl_list.clear();
+        } else { break; }
     }
+    println!("Next date with almost same length is {}. Day length will be {}",
+        dl_list.first().unwrap().1.format("%Y-%m-%d"),
+        seconds_to_hms(dl_list.first().unwrap().0));
+    if dl_list.len() > 1 {
+        println!("There is some more dates in the list. Please check it out");
+        println!("{:.?}", dl_list);
+    }
+
 }
 
 fn days_to_new_year(dt: DateTime<Utc>) -> u16 {

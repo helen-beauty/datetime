@@ -7,21 +7,23 @@ use std::time::Instant;
 
 fn main() {
     // Ефремов 53.149159, 38.121840
+    const TIME_OFFSET_SECONDS: i32 = 10800; //3 * 3600 or Moscow time
+    const LAT: f64 = 53.149159;
+    const LON: f64 = 38.121840;
     let start = Instant::now();
-    let lat = 53.149159;
-    let lon = 38.121840;
+
     let today = Utc::now();
     //let today: DateTime<Utc> = "2026-01-10T00:00:00+00:00"
     //  .parse()
     //.expect("Неверный формат даты");
-    let timezone = FixedOffset::east_opt(3 * 3600);
+    let timezone = FixedOffset::east_opt(TIME_OFFSET_SECONDS);
     let delta_t = DeltaT::estimate_from_date_like(today).unwrap_or(69.0);
 
     // Вычисление sunrise / sunset (горизонт 0° + рефракция)
     let result = spa::sunrise_sunset_for_horizon(
         today,
-        lat,
-        lon,
+        LAT,
+        LON,
         delta_t,
         solar_positioning::Horizon::SunriseSunset, // стандартный горизонт с рефракцией
     )
@@ -82,8 +84,8 @@ fn main() {
 
     let res_yesterday = spa::sunrise_sunset_for_horizon(
         yesterday,
-        lat,
-        lon,
+        LAT,
+        LON,
         delta_t,
         solar_positioning::Horizon::SunriseSunset,
     )
@@ -91,8 +93,8 @@ fn main() {
 
     let res_tomorrow = spa::sunrise_sunset_for_horizon(
         tomorrow,
-        lat,
-        lon,
+        LAT,
+        LON,
         delta_t,
         solar_positioning::Horizon::SunriseSunset,
     )
@@ -102,7 +104,6 @@ fn main() {
         (*res_yesterday.sunset().unwrap() - res_yesterday.sunrise().unwrap()).as_seconds_f32();
     let daylength_tomorrow =
         (*res_tomorrow.sunset().unwrap() - res_tomorrow.sunrise().unwrap()).as_seconds_f32();
-    let day_diff = daylength_tomorrow - daylength;
 
     println!(
         "{:<22} {}",
@@ -115,22 +116,21 @@ fn main() {
         seconds_to_hms(daylength_tomorrow)
     );
 
-    if day_diff < 0.0 {
-        println!(
-            "{:<22} {}",
-            "Today is shorter by:",
-            seconds_to_hms(day_diff.abs())
-        );
-    } else {
-        println!("{:<22} {}", "Today is longer by:", seconds_to_hms(day_diff));
-    }
+    let day_diff = daylength_tomorrow - daylength;
+    let verb = if day_diff < 0.0 { "shorter" } else { "longer" };
+    println!(
+        "{:<22} {}",
+        format!("Today is {} by:", verb),
+        seconds_to_hms(day_diff.abs())
+    );
 
-    find_next_date(lat, lon, today, delta_t, &mut daylength);
+    find_next_date(LAT, LON, today, delta_t, &mut daylength);
     let finish = start.elapsed();
     println!("Calculations took: {:?} seconds", finish.as_secs_f64())
 }
 
 fn find_next_date(lat: f64, lon: f64, today: DateTime<Utc>, delta_t: f64, daylength: &mut f32) {
+    let dl_list: Vec<(f32, DateTime<Utc>)> = Vec::new();
     for d in 1..365 {
         let next_date = today + Duration::days(d);
         let future = spa::sunrise_sunset_for_horizon(
@@ -148,12 +148,17 @@ fn find_next_date(lat: f64, lon: f64, today: DateTime<Utc>, delta_t: f64, daylen
                 sunset,
             } => {
                 let next_length = time_diff(sunrise, sunset);
+                let mut rel_count: u8 = 0;
                 if relative_eq!(next_length, daylength, epsilon = 100.0) {
                     println!(
                         "Next date with almost same length is {}. Day length will be {}",
                         next_date.format("%Y-%m-%d"),
                         seconds_to_hms(next_length)
                     );
+                    rel_count += 1;
+                }
+                if rel_count > 1 {
+
                 }
             }
             _ => println!("No sunrise or sunset today"),

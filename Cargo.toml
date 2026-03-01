@@ -10,11 +10,12 @@ approx = "0.5.1"
 
 
 [profile.release]
-opt-level = 3
+opt-level = "z"
 lto = "fat"
 codegen-units = 1
 panic = "abort"
-strip = "symbols"
+debug = false
+strip = true
 overflow-checks = false
 debug-assertions = false
 incremental = false

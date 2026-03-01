@@ -165,11 +165,6 @@ fn find_next_date(lat: f64, lon: f64, today: DateTime<Utc>, delta_t: f64, daylen
                 } => {
                     let next_length = time_diff(sunrise, sunset);
                     if relative_eq!(next_length, daylength, epsilon = epsilon) {
-                        // println!(
-                        //     "Next date with almost same length is {}. Day length will be {}",
-                        //     next_date.format("%Y-%m-%d"),
-                        //     seconds_to_hms(next_length)
-                        // );
                         rel_count += 1;
                         dl_list.push((next_length, next_date));
                     }
@@ -208,7 +203,7 @@ fn time_diff(time1: DateTime<Utc>, time2: DateTime<Utc>) -> f32 {  //return time
 }
 
 fn seconds_to_hms(total_seconds: f32) -> String {
-    //written by claude
+    //written by claude. convert value into hours, minutes and seconds.
     let total_seconds = total_seconds as u32;
     let hours = total_seconds / 3600;
     let minutes = (total_seconds % 3600) / 60;

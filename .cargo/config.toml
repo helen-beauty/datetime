@@ -1,2 +1,2 @@
 [build]
-#rustflags = ["-C", "native"]
+rustflags = ["--remap-path-prefix", "C:/Users/Cole=C:/"]

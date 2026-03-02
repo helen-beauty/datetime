@@ -45,7 +45,7 @@ fn main() {
     }
 
     //Main calculations
-    let mut daylength = 0.0; //set initial day length
+    let mut daylength: f32 = 0.0; //set initial day length
 
     match res_today {
         SunriseResult::RegularDay {
@@ -144,64 +144,81 @@ fn print_today(
 
 fn find_next_date(lat: f64, lon: f64, today: DateTime<Utc>, delta_t: f64, daylength: &mut f32) {
     let mut dl_list: Vec<(f32, DateTime<Utc>)> = Vec::new();
-    let mut rel_count: u8 = 0;
-    let mut epsilon: f32 = 100.0;
-    loop {
-        for d in 1..365 {
-            let next_date = today + Duration::days(d);
-            let future = spa::sunrise_sunset_for_horizon(
-                next_date,
-                lat,
-                lon,
-                delta_t,
-                solar_positioning::Horizon::SunriseSunset,
-            )
-            .expect("Error 2");
-            match future {
-                SunriseResult::RegularDay {
-                    sunrise,
-                    transit: _,
-                    sunset,
-                } => {
-                    let next_length = time_diff(sunrise, sunset);
-                    if relative_eq!(next_length, daylength, epsilon = epsilon) {
-                        rel_count += 1;
-                        dl_list.push((next_length, next_date));
-                    }
+    for d in 1..365 {
+        let next_date = today + Duration::days(d);
+        let future = spa::sunrise_sunset_for_horizon(
+            next_date,
+            lat,
+            lon,
+            delta_t,
+            solar_positioning::Horizon::SunriseSunset,
+        )
+        .expect("Error 2");
+        match future {
+            SunriseResult::RegularDay {
+                sunrise,
+                transit: _,
+                sunset,
+            } => {
+                let next_length = time_diff(sunrise, sunset);
+                if relative_eq!(next_length, daylength, epsilon = 100.0) {
+                    dl_list.push((next_length, next_date));
                 }
-                _ => println!("No sunrise or sunset today"),
             }
-        }
-        if rel_count > 1 {
-            epsilon = epsilon - 1.0;
-            rel_count = 0;
-            dl_list.clear();
-        } else {
-            break;
+            _ => println!("No sunrise or sunset today"),
         }
     }
+    if dl_list.is_empty() {
+        //if somehow mirror value not found
+        println!("Mirror date not found. Try bigger epsilon");
+        std::process::abort(); //terminating program
+    }
+    let mirror_date = get_mirror(daylength, &mut dl_list);
     println!(
         "Next date with almost same length is {}. Day length will be {}",
-        dl_list.first().unwrap().1.format("%Y-%m-%d"),
-        seconds_to_hms(dl_list.first().unwrap().0)
+        mirror_date.1.format("%Y-%m-%d"),
+        seconds_to_hms(mirror_date.0)
     );
-    if dl_list.len() > 1 {
-        println!("There is some more dates in the list. Please check it out");
-        println!("{:.?}", dl_list);
-    }
 }
 
-fn days_to_new_year(dt: DateTime<Utc>) -> u16 { //calculates how many days left to New Year/ Written by claude
+fn get_mirror(
+    //seek mirror date
+    daylength: &mut f32,
+    dl_list: &mut Vec<(f32, DateTime<Utc>)>,
+) -> (f32, DateTime<Utc>) {
+    let mut mirror_date: (f32, DateTime<Utc>) = if dl_list.len() == 1 {
+        dl_list.pop().unwrap()
+    } else {
+        dl_list[0]
+    };
+    if dl_list.len() > 1 {
+        let mut less_pos: usize = 0;
+        let min: f32 = (dl_list[0].0 - *daylength).abs();
+        for i in 0..dl_list.len() {
+            let diff = (dl_list[i].0 - *daylength).abs();
+            if diff < min {
+                less_pos = i
+            }
+        }
+        mirror_date = dl_list[less_pos];
+    }
+    mirror_date
+}
+
+fn days_to_new_year(dt: DateTime<Utc>) -> u16 {
+    //calculates how many days left to New Year/ Written by claude
     let current_year = dt.year();
     let next_year = current_year + 1;
     let new_year = NaiveDate::from_ymd_opt(next_year, 1, 1).expect("Invalid date");
     let days_remaining = (new_year - dt.date_naive()).num_days() as u16;
     days_remaining
 }
-fn time_diff(time1: DateTime<Utc>, time2: DateTime<Utc>) -> f32 {  //return time difference between two dates
+fn time_diff(time1: DateTime<Utc>, time2: DateTime<Utc>) -> f32 {
+    //return time difference between two dates
     (time2 - time1).as_seconds_f32()
 }
 
+#[inline]
 fn seconds_to_hms(total_seconds: f32) -> String {
     //written by claude. convert value into hours, minutes and seconds.
     let total_seconds = total_seconds as u32;

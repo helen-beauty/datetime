@@ -13,9 +13,8 @@ fn main() {
     let start = Instant::now(); //Timestamp for performance check
 
     let today = Utc::now(); //current date and time
-    // let today: DateTime<Utc> = "2026-06-22T00:00:00+00:00"
-    //     .parse()
-    //     .expect("Incorrect date format"); //For test purposes
+    // For tests uncomment below "let today"
+    //let today: DateTime<Utc> = "2026-06-22T00:00:00+00:00".parse().expect("Incorrect date format");
     let timezone = FixedOffset::east_opt(TIME_OFFSET_SECONDS); //Set timezone
     let delta_t = DeltaT::estimate_from_date_like(today).unwrap_or(69.0); //Delta T from date
 
@@ -27,22 +26,11 @@ fn main() {
         delta_t,
         solar_positioning::Horizon::SunriseSunset, // стандартный горизонт с рефракцией
     )
-    .expect("Error 1");
+    .expect("Error. Cannot calculate today spa");
 
     println!("Today {}", today.format("%Y-%m-%d"));
 
-    let to_ny = days_to_new_year(today); //Days to new year
-    let days_in_year = if is_leap_year(today.year()) { 366 } else { 365 }; //amount days in year
-    if to_ny == 0 {
-        //To make people happy
-        println!("Today is New Year! Happy holidays!")
-    } else {
-        println!(
-            "Days to New Year: {}. Year completed at {:.02}%",
-            to_ny,
-            100.0 - (to_ny as f32 / days_in_year as f32 * 100.0)
-        )
-    }
+    print_days_to_ny(today);
 
     //Main calculations
     let mut daylength: f32 = 0.0; //set initial day length
@@ -76,7 +64,7 @@ fn main() {
         delta_t,
         solar_positioning::Horizon::SunriseSunset,
     )
-    .expect("Error 3");
+    .expect("Error. Cannot calculate yesterday spa");
 
     let res_tomorrow = spa::sunrise_sunset_for_horizon(
         tomorrow,
@@ -85,7 +73,7 @@ fn main() {
         delta_t,
         solar_positioning::Horizon::SunriseSunset,
     )
-    .expect("Error 4");
+    .expect("Error. Cannot calculate tomorrow spa");
 
     let daylength_yesterday =
         (*res_yesterday.sunset().unwrap() - res_yesterday.sunrise().unwrap()).as_seconds_f32();
@@ -111,9 +99,24 @@ fn main() {
         seconds_to_hms(day_diff.abs()) //Passing absolute value to function
     );
 
-    find_next_date(LAT, LON, today, delta_t, &mut daylength); //long slice of code introduced as function
+    find_next_date(LAT, LON, today, delta_t, daylength); //long slice of code introduced as function
     let finish = start.elapsed(); //For performance check
     println!("Calculations took: {} seconds", finish.as_secs_f64())
+}
+
+fn print_days_to_ny(today: DateTime<Utc>) {
+    let to_ny = days_to_new_year(today); //Days to new year
+    let days_in_year = if is_leap_year(today.year()) { 366 } else { 365 }; //amount days in year
+    if to_ny == 0 {
+        //To make people happy
+        println!("Today is New Year! Happy holidays!")
+    } else {
+        println!(
+            "Days to New Year: {}. Year completed at {:.02}%",
+            to_ny,
+            100.0 - (to_ny as f32 / days_in_year as f32 * 100.0)
+        )
+    }
 }
 
 fn print_today(
@@ -125,24 +128,15 @@ fn print_today(
     println!(
         "{:<12}{}\r\n{:<12}{}\r\n{:<12}{}",
         "Sunrise:",
-        sunrise
-            .with_timezone(&timezone.unwrap())
-            .format("%H:%M:%S")
-            .to_string(),
+        sunrise.with_timezone(&timezone.unwrap()).format("%H:%M:%S"),
         "Solar noon:",
-        transit
-            .with_timezone(&timezone.unwrap())
-            .format("%H:%M:%S")
-            .to_string(),
+        transit.with_timezone(&timezone.unwrap()).format("%H:%M:%S"),
         "Sunset:",
-        sunset
-            .with_timezone(&timezone.unwrap())
-            .format("%H:%M:%S")
-            .to_string()
+        sunset.with_timezone(&timezone.unwrap()).format("%H:%M:%S")
     );
 }
 
-fn find_next_date(lat: f64, lon: f64, today: DateTime<Utc>, delta_t: f64, daylength: &mut f32) {
+fn find_next_date(lat: f64, lon: f64, today: DateTime<Utc>, delta_t: f64, daylength: f32) {
     let mut dl_list: Vec<(f32, DateTime<Utc>)> = Vec::new();
     for d in 1..365 {
         let next_date = today + Duration::days(d);
@@ -153,7 +147,7 @@ fn find_next_date(lat: f64, lon: f64, today: DateTime<Utc>, delta_t: f64, daylen
             delta_t,
             solar_positioning::Horizon::SunriseSunset,
         )
-        .expect("Error 2");
+        .expect("Error. Cannot calculate future spa");
         match future {
             SunriseResult::RegularDay {
                 sunrise,
@@ -171,9 +165,9 @@ fn find_next_date(lat: f64, lon: f64, today: DateTime<Utc>, delta_t: f64, daylen
     if dl_list.is_empty() {
         //if somehow mirror value not found
         println!("Mirror date not found. Try bigger epsilon");
-        std::process::abort(); //terminating program
+        std::process::exit(1); //terminating program
     }
-    let mirror_date = get_mirror(daylength, &mut dl_list);
+    let mirror_date = get_mirror(daylength, &dl_list);
     println!(
         "Next date with almost same length is {}. Day length will be {}",
         mirror_date.1.format("%Y-%m-%d"),
@@ -182,27 +176,19 @@ fn find_next_date(lat: f64, lon: f64, today: DateTime<Utc>, delta_t: f64, daylen
 }
 
 fn get_mirror(
-    //seek mirror date
-    daylength: &mut f32,
-    dl_list: &mut Vec<(f32, DateTime<Utc>)>,
+    //seek mirror date based on day length
+    daylength: f32,
+    dl_list: &[(f32, DateTime<Utc>)],
 ) -> (f32, DateTime<Utc>) {
-    let mut mirror_date: (f32, DateTime<Utc>) = if dl_list.len() == 1 {
-        dl_list.pop().unwrap()
-    } else {
-        dl_list[0]
-    };
-    if dl_list.len() > 1 {
-        let mut less_pos: usize = 0;
-        let min: f32 = (dl_list[0].0 - *daylength).abs();
-        for i in 0..dl_list.len() {
-            let diff = (dl_list[i].0 - *daylength).abs();
-            if diff < min {
-                less_pos = i
-            }
-        }
-        mirror_date = dl_list[less_pos];
-    }
-    mirror_date
+    dl_list
+        .iter()
+        .min_by(|a, b| {
+            let da = (a.0 - daylength).abs();
+            let db = (b.0 - daylength).abs();
+            da.partial_cmp(&db).unwrap()
+        })
+        .copied()
+        .unwrap()
 }
 
 fn days_to_new_year(dt: DateTime<Utc>) -> u16 {
@@ -210,15 +196,13 @@ fn days_to_new_year(dt: DateTime<Utc>) -> u16 {
     let current_year = dt.year();
     let next_year = current_year + 1;
     let new_year = NaiveDate::from_ymd_opt(next_year, 1, 1).expect("Invalid date");
-    let days_remaining = (new_year - dt.date_naive()).num_days() as u16;
-    days_remaining
+    (new_year - dt.date_naive()).num_days() as u16
 }
 fn time_diff(time1: DateTime<Utc>, time2: DateTime<Utc>) -> f32 {
     //return time difference between two dates
     (time2 - time1).as_seconds_f32()
 }
 
-#[inline]
 fn seconds_to_hms(total_seconds: f32) -> String {
     //written by claude. convert value into hours, minutes and seconds.
     let total_seconds = total_seconds as u32;
@@ -230,5 +214,5 @@ fn seconds_to_hms(total_seconds: f32) -> String {
 }
 
 fn is_leap_year(year: i32) -> bool {
-    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+    NaiveDate::from_ymd_opt(year, 2, 29).is_some()
 } //written by claude

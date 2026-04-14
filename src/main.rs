@@ -28,9 +28,19 @@ fn main() {
     )
     .expect("Error. Cannot calculate today spa");
 
+    let days_to_ny = get_days_to_ny(today);
+
     println!("Today {}", today.format("%Y-%m-%d"));
 
-    print_days_to_ny(today);
+    if days_to_ny.0 == 0 {
+        //To make people happy
+        println!("Today is New Year! Happy holidays!")
+    } else {
+        println!(
+            "Days to New Year: {}. Year completed at {:.02}%",
+            days_to_ny.0, days_to_ny.1
+        );
+    }
 
     //Main calculations
     let mut daylength: f32 = 0.0; //set initial day length
@@ -104,19 +114,10 @@ fn main() {
     println!("Calculations took: {} seconds", finish.as_secs_f64())
 }
 
-fn print_days_to_ny(today: DateTime<Utc>) {
+fn get_days_to_ny(today: DateTime<Utc>) -> (u16, f32) {
     let to_ny = days_to_new_year(today); //Days to new year
     let days_in_year = if is_leap_year(today.year()) { 366 } else { 365 }; //amount days in year
-    if to_ny == 0 {
-        //To make people happy
-        println!("Today is New Year! Happy holidays!")
-    } else {
-        println!(
-            "Days to New Year: {}. Year completed at {:.02}%",
-            to_ny,
-            100.0 - (to_ny as f32 / days_in_year as f32 * 100.0)
-        )
-    }
+    (to_ny, 100.0 - (to_ny as f32 / days_in_year as f32 * 100.0))
 }
 
 fn print_today(
@@ -155,7 +156,7 @@ fn find_next_date(lat: f64, lon: f64, today: DateTime<Utc>, delta_t: f64, daylen
                 sunset,
             } => {
                 let next_length = time_diff(sunrise, sunset);
-                if relative_eq!(next_length, daylength, epsilon = 100.0) {
+                if relative_eq!(next_length, daylength, epsilon = 1000.0) {
                     dl_list.push((next_length, next_date));
                 }
             }

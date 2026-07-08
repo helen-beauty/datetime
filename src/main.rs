@@ -170,8 +170,8 @@ fn find_next_date(lat: f64, lon: f64, today: DateTime<Utc>, delta_t: f64, daylen
     }
     let mirror_date = get_mirror(daylength, &dl_list);
     println!(
-        "Next date with almost same length is {}. Day length will be {}",
-        mirror_date.1.format("%Y-%m-%d"),
+        "Next date with almost same length is {} (after {} days). Day length will be {}",
+        mirror_date.1.format("%Y-%m-%d"), (mirror_date.1 - today).num_days(),
         seconds_to_hms(mirror_date.0)
     );
 }
